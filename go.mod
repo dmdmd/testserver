@@ -1,3 +1,3 @@
-module example.com/testserver
+module example.com/service
 
 go 1.15
