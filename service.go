@@ -13,47 +13,63 @@ import (
 	"time"
 )
 
+const (
+	timeout    = time.Duration(500 * time.Millisecond)
+	timeoutMsg = "{\"numbers\":[]}"
+)
+
+//MyHandler abc
+type MyHandler struct{}
+
+func (h *MyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	handler(w, r)
+}
+
 func main() {
 	listenAddr := flag.String("http.addr", ":8080", "http listen address")
 	flag.Parse()
 
-	http.HandleFunc("/numbers", handler)
+	rootHandler := &MyHandler{}
+
+	// http.HandleFunc("/numbers", handler)
+	http.Handle("/numbers", http.TimeoutHandler(rootHandler, timeout, timeoutMsg))
+
 	log.Fatal(http.ListenAndServe(*listenAddr, nil))
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	c := make(chan []int)
+	// c := make(chan []int)
+	result := []int{}
 	param := "u"
-	keys, ok := r.URL.Query()[param]
 
-	result := map[string][]int{
-		"numbers": {},
-	}
+	// go func() {
+	keys, ok := r.URL.Query()[param]
 
 	if !ok || len(keys[0]) < 1 {
 		log.Printf("Url Param '%v' is missing\n", param)
 		respondToClient(w, start, result)
 		return
 	}
-
-	go func() {
-		aux := handleRequest(keys)
-		c <- aux
-	}()
+	result = handleRequest(keys)
+	// c <- aux
+	// }()
 
 	// Listen on our channel AND a timeout channel - which ever happens first.
-	select {
-	case res := <-c:
-		result["numbers"] = res
-		log.Println("finished on time")
-		respondToClient(w, start, result)
+	// select {
+	// case res := <-c:
+	// 	result = res
+	// 	log.Println("finished on time")
+	// 	respondToClient(w, start, result)
 
-	case <-time.After(500 * time.Millisecond):
-		result["numbers"] = <-c
-		log.Println("out of time :(")
-		respondToClient(w, start, result)
-	}
+	// case <-time.After(500 * time.Millisecond):
+	// 	result = <-c
+	// 	log.Println("out of time :(")
+	// 	respondToClient(w, start, result)
+	// 	return
+	// }
+
+	respondToClient(w, start, result)
 
 }
 
@@ -127,10 +143,10 @@ func mergeInMap(arr1 map[int]bool, arr2 []int) map[int]bool {
 	return arr1
 }
 
-func respondToClient(w http.ResponseWriter, start time.Time, result map[string][]int) {
+func respondToClient(w http.ResponseWriter, start time.Time, numbers []int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	log.Printf("total duration %v\n", time.Now().Sub(start))
-	json.NewEncoder(w).Encode(result)
+	json.NewEncoder(w).Encode(map[string]interface{}{"numbers": numbers})
 }
