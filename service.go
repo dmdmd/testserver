@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
-	"reflect"
 	"sort"
 	"time"
 )
@@ -18,21 +17,12 @@ const (
 	timeoutMsg = "{\"numbers\":[]}"
 )
 
-//MyHandler abc
-type MyHandler struct{}
-
-func (h *MyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler(w, r)
-}
-
 func main() {
 	listenAddr := flag.String("http.addr", ":8080", "http listen address")
 	flag.Parse()
 
-	rootHandler := &MyHandler{}
-
 	// http.HandleFunc("/numbers", handler)
-	http.Handle("/numbers", http.TimeoutHandler(rootHandler, timeout, timeoutMsg))
+	http.Handle("/numbers", http.TimeoutHandler(http.HandlerFunc(handler), timeout, timeoutMsg))
 
 	log.Fatal(http.ListenAndServe(*listenAddr, nil))
 }
@@ -70,7 +60,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	respondToClient(w, start, result)
-
 }
 
 func handleRequest(keys []string) []int {
@@ -80,13 +69,13 @@ func handleRequest(keys []string) []int {
 	for _, url := range keys {
 		arr, duration := handleURL(url)
 		log.Printf("URL %v duration: %v and value %v\n", url, duration, arr)
-		numbersMap = mergeInMap(numbersMap, arr)
+		numbersMap, result = mergeResults(numbersMap, result, arr)
 	}
 
-	for _, k := range reflect.ValueOf(numbersMap).MapKeys() {
-		val := int(k.Int())
-		result = append(result, val)
-	}
+	// for _, k := range reflect.ValueOf(numbersMap).MapKeys() {
+	// 	val := int(k.Int())
+	// 	result = append(result, val)
+	// }
 
 	sort.Ints(result)
 	return result
@@ -135,12 +124,15 @@ func handleURL(url string) ([]int, time.Duration) {
 	return []int{}, time.Now().Sub(start)
 }
 
-func mergeInMap(arr1 map[int]bool, arr2 []int) map[int]bool {
-	for _, value := range arr2 {
-		arr1[value] = true
+func mergeResults(m1 map[int]bool, results []int, arr []int) (map[int]bool, []int) {
+	for _, value := range arr {
+		if !m1[value] {
+			results = append(results, value)
+		}
+		m1[value] = true
 	}
 
-	return arr1
+	return m1, results
 }
 
 func respondToClient(w http.ResponseWriter, start time.Time, numbers []int) {
