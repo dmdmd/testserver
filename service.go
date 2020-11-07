@@ -23,7 +23,7 @@ func main() {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	// c := make(chan int)
+	c := make(chan []int)
 	param := "u"
 	keys, ok := r.URL.Query()[param]
 
@@ -37,17 +37,24 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result["numbers"] = handleRequest(keys)
+	go func() {
+		aux := handleRequest(keys)
+		c <- aux
+	}()
 
-	respondToClient(w, start, result)
-}
+	// Listen on our channel AND a timeout channel - which ever happens first.
+	select {
+	case res := <-c:
+		result["numbers"] = res
+		log.Println("finished on time")
+		respondToClient(w, start, result)
 
-func respondToClient(w http.ResponseWriter, start time.Time, result map[string][]int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	case <-time.After(500 * time.Millisecond):
+		result["numbers"] = <-c
+		log.Println("out of time :(")
+		respondToClient(w, start, result)
+	}
 
-	log.Printf("total duration %v\n", time.Now().Sub(start))
-	json.NewEncoder(w).Encode(result)
 }
 
 func handleRequest(keys []string) []int {
@@ -110,7 +117,6 @@ func handleURL(url string) ([]int, time.Duration) {
 
 	log.Printf("Url %v return code %v", url, resp.StatusCode)
 	return []int{}, time.Now().Sub(start)
-
 }
 
 func mergeInMap(arr1 map[int]bool, arr2 []int) map[int]bool {
@@ -119,4 +125,12 @@ func mergeInMap(arr1 map[int]bool, arr2 []int) map[int]bool {
 	}
 
 	return arr1
+}
+
+func respondToClient(w http.ResponseWriter, start time.Time, result map[string][]int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	log.Printf("total duration %v\n", time.Now().Sub(start))
+	json.NewEncoder(w).Encode(result)
 }
