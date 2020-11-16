@@ -1,24 +1,18 @@
 package main
 
 import (
-	"bytes"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHandlerNoParam(t *testing.T) {
-	var (
-		buf    bytes.Buffer
-		logger = log.New(&buf, "logger: ", log.Lshortfile)
-	)
-	s := service{
-		log: logger,
-	}
+	s := service{}
+
 	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
 	// pass 'nil' as the third parameter.
 	req, err := http.NewRequest("GET", "/numbers", nil)
@@ -49,13 +43,8 @@ func TestHandlerNoParam(t *testing.T) {
 }
 
 func TestHandlerSuccess(t *testing.T) {
-	var (
-		buf    bytes.Buffer
-		logger = log.New(&buf, "logger: ", log.Lshortfile)
-	)
-	s := service{
-		log: logger,
-	}
+	s := service{}
+
 	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
 	// pass 'nil' as the third parameter.
 	req, err := http.NewRequest("GET", "/numbers?u=http://localhost:8090/primes&u=http://localhost:8090/fibo", nil)
@@ -85,41 +74,32 @@ func TestHandlerSuccess(t *testing.T) {
 	}
 }
 
-// func BenchmarkHandler(b *testing.B) {
-// 	for i := 0; i < b.N; i++ {
-// 		rand.Int()
-// 	}
-// }
+func TestRespondToClient(t *testing.T) {
+	s := service{}
 
-func BenchmarkCalculate(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		Calculate(2)
+	numbers := []int{1, 2}
+	start := time.Now()
+	rr := httptest.NewRecorder()
+
+	dur := s.RespondToClient(rr, start, numbers)
+
+	expected := "{\"numbers\":[1,2]}"
+
+	if dur.Milliseconds() > 500 {
+		t.Errorf("Handler took too long to return: %d; want 500 ms", dur)
+	}
+
+	if !strings.HasPrefix(rr.Body.String(), expected) {
+		t.Errorf("Test response: got \"%v\"; expected %v", rr.Body.String(), expected)
 	}
 }
 
-// func TestRespondToClient(t *testing.T) {
-// 	numbers := []int{1, 2}
-// 	start := time.Now()
-// 	w := httptest.NewRecorder()
-// 	result := RespondToClient(w, start, numbers)
-// 	if result != 1 {
-// 		t.Errorf("Abs(-1) = %d; want 1", got)
-// 	}
-// }
-
-// func respondToClient(w http.ResponseWriter, start time.Time, numbers []int) {
-// 	w.Header().Set("Content-Type", "application/json")
-// 	w.WriteHeader(http.StatusOK)
-
-// 	log.Printf("total duration %v\n", time.Now().Sub(start))
-// 	json.NewEncoder(w).Encode(map[string]interface{}{"numbers": numbers})
-// }
-
 func TestMergeResultsEmpty(t *testing.T) {
-
-	var m1 = map[int]bool{}
-	var r1 []int
-	var a1 = []int{1}
+	var (
+		m1 = map[int]bool{}
+		r1 []int
+		a1 = []int{1}
+	)
 
 	m1, r1 = MergeResults(m1, r1, a1)
 
@@ -139,7 +119,6 @@ func TestMergeResultsEmpty(t *testing.T) {
 }
 
 func TestMergeResultsWithResults(t *testing.T) {
-
 	var (
 		m1 = map[int]bool{
 			1: true,

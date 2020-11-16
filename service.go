@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,10 +10,11 @@ import (
 	"net/http/httputil"
 	"sort"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type service struct {
-	log *log.Logger
 }
 
 const (
@@ -24,32 +24,38 @@ const (
 
 func main() {
 	listenAddr := flag.String("http.addr", ":8080", "http listen address")
+	logFlag := flag.Bool("v", false, "Verbose")
 	flag.Parse()
 
-	var (
-		buf    bytes.Buffer
-		logger = log.New(&buf, "logger: ", log.Lshortfile)
-	)
-
-	s := service{
-		log: logger,
+	if !*logFlag {
+		log.SetOutput(ioutil.Discard)
 	}
 
-	s.Handle(listenAddr)
+	s := service{}
 
+	s.Listen(listenAddr)
 }
 
 /*
+Listen starts the default http server endpoint
+*/
+func (s *service) Listen(listenAddr *string) {
 
- */
-func (s *service) Handle(listenAddr *string) {
-	http.Handle("/numbers", http.TimeoutHandler(http.HandlerFunc(s.Handler), timeout, timeoutMsg))
+	router := gin.New()
+	router.Use(
+		gin.LoggerWithWriter(gin.DefaultWriter, "/pathsNotToLog/"),
+		gin.Recovery(),
+	)
 
-	s.log.Fatal(http.ListenAndServe(*listenAddr, nil))
+	router.GET("/numbers", func(c *gin.Context) {
+		s.Handler(c.Writer, c.Request)
+	})
+
+	log.Fatal(http.ListenAndServe(*listenAddr, router))
 }
 
 /*
-Handler ...
+Handler processes requests to our service
 */
 func (s *service) Handler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -59,7 +65,7 @@ func (s *service) Handler(w http.ResponseWriter, r *http.Request) {
 	keys, ok := r.URL.Query()[param]
 
 	if !ok || len(keys[0]) < 1 {
-		s.log.Printf("Url Param '%v' is missing\n", param)
+		log.Printf("Url Param '%v' is missing\n", param)
 		s.RespondToClient(w, start, result)
 		return
 	}
@@ -69,15 +75,15 @@ func (s *service) Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-RequestToUrls ...
+RequestToUrls requests the urls input and merges the return in a sorted array
 */
-func (s *service) RequestToUrls(keys []string) []int {
+func (s *service) RequestToUrls(urls []string) []int {
 	numbersMap := map[int]bool{}
 	result := []int{}
 
-	for _, url := range keys {
+	for _, url := range urls {
 		arr, duration := s.handleURL(url)
-		s.log.Printf("URL %v duration: %v and value %v\n", url, duration, arr)
+		log.Printf("URL %v duration: %v and value %v\n", url, duration, arr)
 		numbersMap, result = MergeResults(numbersMap, result, arr)
 	}
 
@@ -93,14 +99,14 @@ func (s *service) handleURL(url string) ([]int, time.Duration) {
 	resp, err := http.Get(url)
 
 	if err != nil {
-		s.log.Printf("Couldn't request %v: %v\n", url, err)
+		log.Printf("Couldn't request %v: %v\n", url, err)
 		return []int{}, time.Now().Sub(start)
 	}
 
 	requestDump, err := httputil.DumpResponse(resp, true)
 
 	if err != nil {
-		s.log.Printf("Url %v didn't return a valid response: %v\n", url, err)
+		log.Printf("Url %v didn't return a valid response: %v\n", url, err)
 		return []int{}, time.Now().Sub(start)
 	}
 
@@ -113,7 +119,7 @@ func (s *service) handleURL(url string) ([]int, time.Duration) {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
 
 		if err != nil {
-			s.log.Printf("Url %v return code error %v\n", url, err)
+			log.Printf("Url %v return code error %v\n", url, err)
 			return []int{}, time.Now().Sub(start)
 		}
 
@@ -124,12 +130,13 @@ func (s *service) handleURL(url string) ([]int, time.Duration) {
 		return page["numbers"], time.Now().Sub(start)
 	}
 
-	s.log.Printf("Url %v return code %v", url, resp.StatusCode)
+	log.Printf("Url %v return code %v", url, resp.StatusCode)
 	return []int{}, time.Now().Sub(start)
 }
 
 /*
-MergeResults ...
+MergeResults Inserts arr elements that dont exist in results. It uses m1 to track
+existing elements in "results"
 */
 func MergeResults(m1 map[int]bool, results []int, arr []int) (map[int]bool, []int) {
 	for _, value := range arr {
@@ -143,18 +150,16 @@ func MergeResults(m1 map[int]bool, results []int, arr []int) (map[int]bool, []in
 }
 
 /*
-RespondToClient ...
+RespondToClient Writes content type and status 200 on the header and the formated result
+in the body
 */
-func (s *service) RespondToClient(w http.ResponseWriter, start time.Time, numbers []int) {
+func (s *service) RespondToClient(w http.ResponseWriter, start time.Time, numbers []int) time.Duration {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	s.log.Printf("total duration %v\n", time.Now().Sub(start))
+	dur := time.Now().Sub(start)
+	log.Printf("total duration %v\n", dur)
 	json.NewEncoder(w).Encode(map[string]interface{}{"numbers": numbers})
-}
 
-// Calculate returns x + 2.
-func Calculate(x int) (result int) {
-	result = x + 2
-	return result
+	return dur
 }
